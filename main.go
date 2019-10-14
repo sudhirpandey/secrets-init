@@ -13,14 +13,20 @@ import (
 	"syscall"
 	"time"
 
+        "github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/secretsmanager"
 	"github.com/aws/aws-sdk-go/service/ssm"
+        "github.com/golang/glog"
 )
 
 var (
 	versionString = "0.1.0"
 )
+
+type CloudConfig struct {
+	Region string
+}
 
 func main() {
 	var version bool
@@ -84,11 +90,17 @@ func removeZombies(ctx context.Context, wg *sync.WaitGroup) {
 // resolve secrets against AWS Secret Manager and AWS SSM Parameter Store
 // replace all ENV variables values prefixed with 'aws:aws:secretsmanager' and 'arn:aws:ssm:REGION:ACCOUNT:parameter'
 // by corresponding secrets from AWS Secret Manager and AWS Parameter Store
-func resolveSecrets() []string {
+func (cfg *CloudConfig) resolveSecrets() []string {
 	var envs []string
 	var s *session.Session
 	var sm *secretsmanager.SecretsManager
 	var ssmsvc *ssm.SSM
+
+        if region, ok := os.LookupEnv("AWS_REGION"); ok {
+		cfg.Region = region
+	}else{
+          glog.ErrorDepth(4, fmt.Sprintf("Failed to get AWS_REGION From environment"))
+        }
 
 	for _, env := range os.Environ() {
 		kv := strings.Split(env, "=")
@@ -114,9 +126,16 @@ func resolveSecrets() []string {
 				// get SSM parameter name (path)
 				paramName := strings.TrimPrefix(tokens[5], "parameter")
 				// create AWS API session, if needed
+                                println("Establishing session")
 				if s == nil {
-					s = session.Must(session.NewSessionWithOptions(session.Options{SharedConfigState: session.SharedConfigEnable}))
-				}
+				       s = session.Must(session.NewSessionWithOptions(session.Options{
+                                               SharedConfigState: session.SharedConfigEnable, 
+                                               Config: aws.Config{
+		                                       Region: aws.String(cfg.Region),
+	                                               },
+                                           }))
+                                }
+
 				// create SSM service, if needed
 				if ssmsvc == nil {
 					ssmsvc = ssm.New(s)
@@ -128,7 +147,11 @@ func resolveSecrets() []string {
 				})
 				if err == nil {
 					env = key + "=" + *param.Parameter.Value
-				}
+                                        glog.InfoDepth(4, fmt.Sprintf("env vars %s",env))
+                                        println(env)
+				}else{
+                                   glog.ErrorDepth(4, fmt.Sprintf("Failed to get AWS parameter: %s", err.Error()))
+                                }
 			}
 		}
 		envs = append(envs, env)
@@ -141,7 +164,7 @@ func resolveSecrets() []string {
 func run(commandSlice []string) error {
 	var commandStr string
 	var argsSlice []string
-
+        var config CloudConfig
 	// split command and arguments
 	commandStr = commandSlice[0]
 	// if there is args
@@ -163,7 +186,7 @@ func run(commandSlice []string) error {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
 	// set environment variables
-	cmd.Env = resolveSecrets()
+	cmd.Env = config.resolveSecrets()
 
 	// Goroutine for signals forwarding
 	go func() {
