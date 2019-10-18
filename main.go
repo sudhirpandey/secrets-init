@@ -137,7 +137,10 @@ func (cfg *CloudConfig) resolveSecrets() []string {
 						case string:
 							//if the supplied ssm key was equal to the key found add to env var to be exported 
 							if (strings.ToLower(key) == k){
-                                env = key + "=" + v
+								env = key + "=" + v
+								if cfg.APIDebug {
+									glog.Info(fmt.Sprintf("env vars %s",env))
+								}
 							}
 						default:
 							fmt.Println(k, v, "(unknown)")
