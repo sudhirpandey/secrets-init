@@ -201,7 +201,7 @@ func run(commandSlice []string) error {
 	var commandStr string
 	var argsSlice []string
 	var config CloudConfig
-	config.APIDebug=false
+	config.APIDebug=true
 	// split command and arguments
 	commandStr = commandSlice[0]
 	// if there is args
