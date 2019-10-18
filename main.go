@@ -12,6 +12,7 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	"encoding/json"
 
     "github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -123,7 +124,30 @@ func (cfg *CloudConfig) resolveSecrets() []string {
 			// get secret value
 			secret, err := sm.GetSecretValue(&secretsmanager.GetSecretValueInput{SecretId: &value})
 			if err == nil {
-				env = key + "=" + *secret.SecretString
+				//env = key + "=" + *secret.SecretString
+				var result map[string]interface{}
+				error := json.Unmarshal([]byte(*secret.SecretString), &result)
+
+				//if we could not not marsal it in map, must be simple string
+				if error !=  nil {
+					env = key + "=" + *secret.SecretString
+				}else{
+					for k, v := range data {
+						switch v := v.(type) {
+						case string:
+							//if the supplied ssm key was equal to the key found add to env var to be exported 
+							if (strings.ToLower(key) == k){
+                                env = key + "=" + v
+							}
+						default:
+							fmt.Println(k, v, "(unknown)")
+						}
+                        envs = append(envs, env)
+						}
+					}
+				}
+
+
 			}
 		} else if strings.HasPrefix(value, "arn:aws:ssm") && strings.Contains(value, ":parameter/") {
 			tokens := strings.Split(value, ":")
